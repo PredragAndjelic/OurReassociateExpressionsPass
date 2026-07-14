@@ -7,6 +7,7 @@
 #include <llvm/IR/Constants.h>
 #include <unordered_map>
 #include <vector>
+#include <deque>
 
 using namespace llvm;
 
@@ -154,22 +155,30 @@ namespace {
       return true;
     }
 
-    void mergeSameOperandsToMul(std::vector<Value*>& NotConstants, unsigned Opcode) {
+    void mergeSameOperandsToMul(std::deque<Value*>& Linearized, unsigned Opcode) {
       if (Opcode != Instruction::Add && Opcode != Instruction::FAdd)
         return;
 
-      std::vector<unsigned> toRemove(NotConstants.size(), 0);
-      std::vector<unsigned> isRepresentative(NotConstants.size(), 0);
+      int numOfConsts = 0;
 
-      for (int i = 0; i < NotConstants.size(); i++) {
-        for (int j = i + 1; j < NotConstants.size(); j++) {
-          if (areIdenticalOperands(NotConstants[i], NotConstants[j]) && isRepresentative[j] == 0 &&
-            toRemove[j] == 0) {
+      for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0; i--) {
+        numOfConsts++;
+      }
+
+      int size = Linearized.size() - numOfConsts;
+
+      std::vector<bool> toRemove(size, false);
+      std::vector<unsigned> isRepresentative(size, 0);
+
+      for (int i = 0; i < size && getRank(Linearized[i]) != 0; i++) {
+        for (int j = i + 1; j < size && getRank(Linearized[i]) == getRank(Linearized[j]); j++) {
+          if (areIdenticalOperands(Linearized[i], Linearized[j]) && isRepresentative[j] == 0 &&
+            toRemove[j] == false) {
             if (isRepresentative[i] == 0)
               isRepresentative[i] += 2;
             else
               isRepresentative[i]++;
-            toRemove[j] = 1;
+            toRemove[j] = true;
             }
         }
       }
@@ -178,15 +187,15 @@ namespace {
 
       for (int i = 0; i < isRepresentative.size(); i++) {
         if (isRepresentative[i] > 1) {
-          Instruction* I = dyn_cast<Instruction>(NotConstants[i]);
+          Instruction* I = dyn_cast<Instruction>(Linearized[i]);
           if (Opcode == Instruction::Add) {
             ConstantInt* Multiplier = ConstantInt::get(Type::getInt32Ty(I->getContext()), isRepresentative[i]);
-            BinaryOperator* Mul = BinaryOperator::Create(Instruction::Mul, NotConstants[i], Multiplier, "", I->getNextNode());
+            BinaryOperator* Mul = BinaryOperator::Create(Instruction::Mul, Linearized[i], Multiplier, "", I->getNextNode());
             Concat.push_back(Mul);
           }
           if (Opcode == Instruction::FAdd) {
             Constant* Multiplier = ConstantFP::get(Type::getDoubleTy(I->getContext()), (double)isRepresentative[i]);
-            BinaryOperator* FMul = BinaryOperator::Create(Instruction::FMul, NotConstants[i], Multiplier, "", I->getNextNode());
+            BinaryOperator* FMul = BinaryOperator::Create(Instruction::FMul, Linearized[i], Multiplier, "", I->getNextNode());
             Concat.push_back(FMul);
           }
         }
@@ -194,20 +203,20 @@ namespace {
 
 
       for (int i = 0; i < toRemove.size(); i++) {
-        Instruction* I = dyn_cast<Instruction>(NotConstants[i]);
+        Instruction* I = dyn_cast<Instruction>(Linearized[i]);
         if (toRemove[i]) {
           //ovde treba napraviti neku funkciju koja ce skroz do dna da "iscisti" sve sto se tice ove instrukcije I
-          NotConstants[i] = nullptr;
+          Linearized[i] = nullptr;
         }
         if (isRepresentative[i] > 1) {
-          NotConstants[i] = nullptr;
+          Linearized[i] = nullptr;
         }
       }
 
-      NotConstants.erase(std::remove(NotConstants.begin(), NotConstants.end(), nullptr), NotConstants.end());
+      Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr), Linearized.end());
 
       for (Value* V : Concat)
-        NotConstants.push_back(V);
+        Linearized.push_front(V);
 
       Concat.clear();
 
@@ -215,23 +224,18 @@ namespace {
 
 
     void processInstruction(Instruction* I, std::vector<Value*>& Linearized) {
-
       std::stable_sort(Linearized.begin(), Linearized.end(), [this](Value* A, Value* B){
          return getRank(A) > getRank(B);
       });
 
-      std::vector<Value*> Constants;
-      std::vector<Value*> NotConstants;
+      std::deque<Value*> d(Linearized.begin(), Linearized.end());
+      mergeSameOperandsToMul(d, I->getOpcode());
+      Linearized.clear();
+      Linearized.assign(d.begin(), d.end());
+      d.clear();
 
-      for (Value* V : Linearized) {
-        if (isa<Constant>(V))
-          Constants.push_back(V);
-        else
-          NotConstants.push_back(V);
-      }
-
-      mergeSameOperandsToMul(NotConstants, I->getOpcode());
       //treba nastaviti sa obradom Linearized niza i kreiranjem novih instrukcija i optimizovanog IR-a
+
     }
 
     OurReassociateExpressionsPass() : FunctionPass(ID) {}
