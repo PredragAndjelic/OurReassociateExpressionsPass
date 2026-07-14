@@ -4,7 +4,6 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Pass.h"
 #include <llvm/IR/Constants.h>
-
 #include <algorithm>
 #include <deque>
 #include <unordered_map>
@@ -24,24 +23,23 @@ struct OurReassociateExpressionsPass : public FunctionPass {
   bool isRoot(BinaryOperator *BO1) {
     BinaryOperator *BO2;
     for (User *U : BO1->users())
-      if ((BO2 = dyn_cast<BinaryOperator>(U)) &&
-          BO2->getOpcode() == BO1->getOpcode())
+      if ((BO2 = dyn_cast<BinaryOperator>(U)) && BO2->getOpcode() == BO1->getOpcode())
         return false;
     return true;
   }
 
   bool isSuitableOperation(Instruction *I) {
     switch (I->getOpcode()) {
-    case Instruction::Add:
-    case Instruction::Mul:
-    case Instruction::FAdd:
-    case Instruction::FMul:
-    case Instruction::And:
-    case Instruction::Or:
-    case Instruction::Xor:
-      return true;
-    default:
-      return false;
+      case Instruction::Add:
+      case Instruction::Mul:
+      case Instruction::FAdd:
+      case Instruction::FMul:
+      case Instruction::And:
+      case Instruction::Or:
+      case Instruction::Xor:
+                            return true;
+      default:
+                            return false;
     }
   }
 
@@ -65,7 +63,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       return RankMap[V];
 
     Instruction *I = dyn_cast<Instruction>(V);
-    return computeRank(I);
+      return computeRank(I);
   }
 
   void assignRankToInstr(Instruction *I) {
@@ -174,8 +172,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     }
 
   void linearize(Instruction *I, std::vector<Value *> &Linearized) {
-    if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(),
-                  I) == InstructionsToRemove.end())
+    if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), I) == InstructionsToRemove.end())
       InstructionsToRemove.push_back(I);
 
     unsigned InstrOpcode = I->getOpcode();
@@ -204,7 +201,6 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       linearize(BO2, Linearized);
     }
   }
-
 
   bool areIdenticalOperands(Value *V1, Value *V2) {
     if (V1 == V2)
@@ -242,15 +238,13 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     return true;
   }
 
-  void mergeSameOperandsToMul(std::deque<Value *> &Linearized,
-                              unsigned Opcode) {
+  void mergeSameOperandsToMul(std::deque<Value *> &Linearized, unsigned Opcode) {
     if (Opcode != Instruction::Add && Opcode != Instruction::FAdd)
       return;
 
     int numOfConsts = 0;
 
-    for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0;
-         i--) {
+    for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0; i--) {
       numOfConsts++;
     }
 
@@ -260,10 +254,8 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     std::vector<unsigned> isRepresentative(size, 0);
 
     for (int i = 0; i < size && getRank(Linearized[i]) != 0; i++) {
-      for (int j = i + 1;
-           j < size && getRank(Linearized[i]) == getRank(Linearized[j]); j++) {
-        if (areIdenticalOperands(Linearized[i], Linearized[j]) &&
-            isRepresentative[j] == 0 && toRemove[j] == false) {
+      for (int j = i + 1; j < size && getRank(Linearized[i]) == getRank(Linearized[j]); j++) {
+        if (areIdenticalOperands(Linearized[i], Linearized[j]) && isRepresentative[j] == 0 && toRemove[j] == false) {
           if (isRepresentative[i] == 0)
             isRepresentative[i] += 2;
           else
@@ -279,19 +271,13 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       if (isRepresentative[i] > 1) {
         Instruction *I = dyn_cast<Instruction>(Linearized[i]);
         if (Opcode == Instruction::Add) {
-          ConstantInt *Multiplier = ConstantInt::get(
-              Type::getInt32Ty(I->getContext()), isRepresentative[i]);
-          BinaryOperator *Mul =
-              BinaryOperator::Create(Instruction::Mul, Linearized[i],
-                                     Multiplier, "", I->getNextNode());
+          ConstantInt *Multiplier = ConstantInt::get(Type::getInt32Ty(I->getContext()), isRepresentative[i]);
+          BinaryOperator *Mul = BinaryOperator::Create(Instruction::Mul, Linearized[i], Multiplier, "", I->getNextNode());
           Concat.push_back(Mul);
         }
         if (Opcode == Instruction::FAdd) {
-          Constant *Multiplier = ConstantFP::get(
-              Type::getDoubleTy(I->getContext()), (double)isRepresentative[i]);
-          BinaryOperator *FMul =
-              BinaryOperator::Create(Instruction::FMul, Linearized[i],
-                                     Multiplier, "", I->getNextNode());
+          Constant *Multiplier = ConstantFP::get(Type::getDoubleTy(I->getContext()), (double)isRepresentative[i]);
+          BinaryOperator *FMul = BinaryOperator::Create(Instruction::FMul, Linearized[i], Multiplier, "", I->getNextNode());
           Concat.push_back(FMul);
         }
       }
@@ -300,8 +286,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     for (int i = 0; i < toRemove.size(); i++) {
       Instruction *I = dyn_cast<Instruction>(Linearized[i]);
       if (toRemove[i]) {
-        // ovde treba napraviti neku funkciju koja ce skroz do dna da "iscisti"
-        // sve sto se tice ove instrukcije I
+        toRemoveToBottom(I);
         Linearized[i] = nullptr;
       }
       if (isRepresentative[i] > 1) {
@@ -309,8 +294,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       }
     }
 
-    Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr),
-                     Linearized.end());
+    Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr), Linearized.end());
 
     for (Value *V : Concat)
       Linearized.push_front(V);
@@ -319,9 +303,9 @@ struct OurReassociateExpressionsPass : public FunctionPass {
   }
 
   void processInstruction(Instruction *I, std::vector<Value *> &Linearized) {
-    std::stable_sort(
-        Linearized.begin(), Linearized.end(),
-        [this](Value *A, Value *B) { return getRank(A) > getRank(B); });
+    std::stable_sort(Linearized.begin(), Linearized.end(), [this](Value *A, Value *B) {
+      return getRank(A) > getRank(B);
+    });
 
     std::deque<Value *> d(Linearized.begin(), Linearized.end());
     mergeSameOperandsToMul(d, I->getOpcode());
@@ -331,43 +315,43 @@ struct OurReassociateExpressionsPass : public FunctionPass {
 
     eraseInLinearizedIfNeeded(Linearized, I);
 
-      Value* LinearizedConstResult = nullptr;
-      Value* LinearizedNotConstResult = nullptr;
+    Value* LinearizedConstResult = nullptr;
+    Value* LinearizedNotConstResult = nullptr;
 
-      if (!Linearized.empty()) {
-        if (isa<Constant>(Linearized.back())) {
-          LinearizedConstResult = Linearized.back();
-          for (int i = Linearized.size() - 2; i >= 0 && getRank(Linearized[i]) == 0; i--) {
-            Constant *C1 = dyn_cast<Constant>(LinearizedConstResult);
-            Constant *C2 = dyn_cast<Constant>(Linearized[i]);
-            LinearizedConstResult = ConstantExpr::get(I->getOpcode(), C1, C2);
-          }
-        }
-
-        if (!isa<Constant>(Linearized[0])) {
-          LinearizedNotConstResult = Linearized[0];
-          for (int i = 1; i < Linearized.size() && getRank(Linearized[i]) != 0; i++) {
-            LinearizedNotConstResult = BinaryOperator::Create(
-            static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult, Linearized[i], "", I);
-          }
+    if (!Linearized.empty()) {
+      if (isa<Constant>(Linearized.back())) {
+        LinearizedConstResult = Linearized.back();
+        for (int i = Linearized.size() - 2; i >= 0 && getRank(Linearized[i]) == 0; i--) {
+          Constant *C1 = dyn_cast<Constant>(LinearizedConstResult);
+          Constant *C2 = dyn_cast<Constant>(Linearized[i]);
+          LinearizedConstResult = ConstantExpr::get(I->getOpcode(), C1, C2);
         }
       }
 
-      Value* FinalResult = nullptr;
-
-      if (LinearizedNotConstResult && LinearizedConstResult)
-        FinalResult = BinaryOperator::Create(
-            static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult, LinearizedConstResult, "", I);
-      else if (LinearizedNotConstResult)
-        FinalResult = LinearizedNotConstResult;
-      else if (LinearizedConstResult)
-        FinalResult = LinearizedConstResult;
-      else {
-        Type* InstrType = I->getType();
-        FinalResult = Constant::getNullValue(InstrType);
+      if (!isa<Constant>(Linearized[0])) {
+        LinearizedNotConstResult = Linearized[0];
+        for (int i = 1; i < Linearized.size() && getRank(Linearized[i]) != 0; i++) {
+          LinearizedNotConstResult = BinaryOperator::Create(
+          static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult, Linearized[i], "", I);
+        }
       }
+    }
 
-      I->replaceAllUsesWith(FinalResult);
+    Value* FinalResult = nullptr;
+
+    if (LinearizedNotConstResult && LinearizedConstResult)
+      FinalResult = BinaryOperator::Create(static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult,
+        LinearizedConstResult, "", I);
+    else if (LinearizedNotConstResult)
+      FinalResult = LinearizedNotConstResult;
+    else if (LinearizedConstResult)
+      FinalResult = LinearizedConstResult;
+    else {
+      Type* InstrType = I->getType();
+      FinalResult = Constant::getNullValue(InstrType);
+    }
+
+    I->replaceAllUsesWith(FinalResult);
   }
   
   void replaceFMulAddCalls(Function *F) {
@@ -392,10 +376,8 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       // = call fmuladd.f64(a, b, c) Prvo konstruise instrukcija koja mnozei a i
       // b, tj. operande 0 i 1. A zatim konstruise drugu instrukciju na primer
       // %k = fadd %p, 2. Gde dva predstavlja drugu operandu u izrazu a * b + c.
-      BinaryOperator *Mul = BinaryOperator::Create(
-          Instruction::FMul, MulLeftOperand, MulRightOperand, "", CI);
-      BinaryOperator *Add =
-          BinaryOperator::Create(Instruction::FAdd, Mul, AddOperand, "", CI);
+      BinaryOperator *Mul = BinaryOperator::Create(Instruction::FMul, MulLeftOperand, MulRightOperand, "", CI);
+      BinaryOperator *Add = BinaryOperator::Create(Instruction::FAdd, Mul, AddOperand, "", CI);
 
       // Zamenjuje svuda pojavljivanje %i sa %k jer %k sada predstavlja vrednost
       // izraza
@@ -407,8 +389,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
   void StrengthReduction(Function &F) {
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
-        if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(),
-                      &I) != InstructionsToRemove.end())
+        if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), &I) != InstructionsToRemove.end())
           continue;
         if (I.use_empty())
           continue;
@@ -440,9 +421,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
           }
         } else if (CallInst *Call = dyn_cast<CallInst>(&I)) {
           Function *Callee = Call->getCalledFunction();
-          if (Callee &&
-              (Callee->getIntrinsicID() == Intrinsic::pow ||
-               Callee->getName() == "pow" || Callee->getName() == "powf") &&
+          if (Callee && (Callee->getIntrinsicID() == Intrinsic::pow || Callee->getName() == "pow" || Callee->getName() == "powf") &&
               Callee->arg_size() == 2) {
             Value *Base = Call->getArgOperand(0);
             Value *Exponent = Call->getArgOperand(1);
@@ -498,15 +477,13 @@ struct OurReassociateExpressionsPass : public FunctionPass {
 
     StrengthReduction(F);
 
-    for (auto it = InstructionsToRemove.rbegin();
-         it != InstructionsToRemove.rend(); it++)
+    for (auto it = InstructionsToRemove.rbegin(); it != InstructionsToRemove.rend(); it++)
       (*it)->eraseFromParent();
 
     return true;
   }
 };
-} // namespace
+}
 
 char OurReassociateExpressionsPass::ID = 0;
-static RegisterPass<OurReassociateExpressionsPass>
-    X("our-reassociate-expressions", "");
+static RegisterPass<OurReassociateExpressionsPass>X("our-reassociate-expressions", "");
