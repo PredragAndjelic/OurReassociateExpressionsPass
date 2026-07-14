@@ -85,6 +85,94 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       RankMap[I] = 1;
   }
 
+  void toRemoveToBottom(Instruction* I) {
+
+      if (!I)
+        return;
+
+      if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), I) == InstructionsToRemove.end())
+        InstructionsToRemove.push_back(I);
+
+      if (isa<LoadInst>(I))
+        return;
+
+      for (Value* Operand : I->operands()) {
+        if (Instruction* OperandInstr = dyn_cast<Instruction>(Operand))
+          toRemoveToBottom(OperandInstr);
+      }
+    }
+
+    void toRemoveAllOperands(std::vector<Value*>& Linearized) {
+      for (Value* V : Linearized) {
+        Instruction* I = dyn_cast<Instruction>(V);
+        toRemoveToBottom(I);
+      }
+    }
+
+    void eraseInLinearizedIfNeeded(std::vector<Value*>& Linearized, Instruction* I) {
+
+      unsigned InstrOpcode = I->getOpcode();
+
+      for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0; i--) {
+        if (InstrOpcode == Instruction::Add) {
+          if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::FAdd) {
+          if (dyn_cast<ConstantFP>(Linearized[i])->isZero())
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::Mul) {
+          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+          if (CI->isZero()) {
+            toRemoveAllOperands(Linearized);
+            Linearized.clear();
+            break;
+          }
+          else if (CI->isOne())
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::FMul) {
+          ConstantFP* CF = dyn_cast<ConstantFP>(Linearized[i]);
+          if (CF->isZero()) {
+            toRemoveAllOperands(Linearized);
+            Linearized.clear();
+            break;
+          }
+          else if (CF->isExactlyValue(1.0))
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::And) {
+          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+          if (CI->isZero()) {
+            toRemoveAllOperands(Linearized);
+            Linearized.clear();
+            break;
+          }
+          else if (CI->isMinusOne())
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::Or) {
+          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+          if (CI->isMinusOne()) {
+            toRemoveAllOperands(Linearized);
+            Linearized.clear();
+            Linearized.push_back(CI);
+            break;
+          }
+          else if (CI->isZero())
+            Linearized[i] = nullptr;
+        }
+        else if (InstrOpcode == Instruction::Xor) {
+          if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
+            Linearized[i] = nullptr;
+        }
+      }
+
+      Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr), Linearized.end());
+
+    }
+
   void linearize(Instruction *I, std::vector<Value *> &Linearized) {
     if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(),
                   I) == InstructionsToRemove.end())
@@ -116,6 +204,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
       linearize(BO2, Linearized);
     }
   }
+
 
   bool areIdenticalOperands(Value *V1, Value *V2) {
     if (V1 == V2)
@@ -240,55 +329,45 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     Linearized.assign(d.begin(), d.end());
     d.clear();
 
-    std::vector<Value *> NotConstants;
-    std::vector<Value *> Constants;
+    eraseInLinearizedIfNeeded(Linearized, I);
 
-    for (Value *V : Linearized) {
-      if (isa<Constant>(V))
-        Constants.push_back(V);
-      else
-        NotConstants.push_back(V);
-    }
+      Value* LinearizedConstResult = nullptr;
+      Value* LinearizedNotConstResult = nullptr;
 
-    Value *NotConstantResult = nullptr;
-    if (!NotConstants.empty()) {
-      NotConstantResult = NotConstants[0];
-      if (NotConstants.size() == 1 && Constants.empty())
-        NotConstantResult = NotConstants[0];
+      if (!Linearized.empty()) {
+        if (isa<Constant>(Linearized.back())) {
+          LinearizedConstResult = Linearized.back();
+          for (int i = Linearized.size() - 2; i >= 0 && getRank(Linearized[i]) == 0; i--) {
+            Constant *C1 = dyn_cast<Constant>(LinearizedConstResult);
+            Constant *C2 = dyn_cast<Constant>(Linearized[i]);
+            LinearizedConstResult = ConstantExpr::get(I->getOpcode(), C1, C2);
+          }
+        }
+
+        if (!isa<Constant>(Linearized[0])) {
+          LinearizedNotConstResult = Linearized[0];
+          for (int i = 1; i < Linearized.size() && getRank(Linearized[i]) != 0; i++) {
+            LinearizedNotConstResult = BinaryOperator::Create(
+            static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult, Linearized[i], "", I);
+          }
+        }
+      }
+
+      Value* FinalResult = nullptr;
+
+      if (LinearizedNotConstResult && LinearizedConstResult)
+        FinalResult = BinaryOperator::Create(
+            static_cast<Instruction::BinaryOps>(I->getOpcode()), LinearizedNotConstResult, LinearizedConstResult, "", I);
+      else if (LinearizedNotConstResult)
+        FinalResult = LinearizedNotConstResult;
+      else if (LinearizedConstResult)
+        FinalResult = LinearizedConstResult;
       else {
-        for (size_t i = 1; i < NotConstants.size(); i++)
-          NotConstantResult = BinaryOperator::Create(
-              static_cast<Instruction::BinaryOps>(I->getOpcode()),
-              NotConstantResult, NotConstants[i], "", I);
+        Type* InstrType = I->getType();
+        FinalResult = Constant::getNullValue(InstrType);
       }
-    }
 
-    Value *ConstantResult = nullptr;
-    if (!Constants.empty()) {
-      ConstantResult = Constants[0];
-      for (size_t i = 1; i < Constants.size(); i++) {
-        Constant *C1 = dyn_cast<Constant>(ConstantResult);
-        Constant *C2 = dyn_cast<Constant>(Constants[i]);
-
-        ConstantResult = ConstantExpr::get(I->getOpcode(), C1, C2);
-      }
-    }
-
-    Value *FinalResult = nullptr;
-    if (NotConstantResult && ConstantResult)
-      FinalResult = BinaryOperator::Create(
-          static_cast<Instruction::BinaryOps>(I->getOpcode()),
-          NotConstantResult, ConstantResult, "", I);
-    else if (NotConstantResult)
-      FinalResult = NotConstantResult;
-    else if (ConstantResult)
-      FinalResult = ConstantResult;
-    else {
-      Type *InstrType = I->getType();
-      FinalResult = Constant::getNullValue(InstrType);
-    }
-
-    I->replaceAllUsesWith(FinalResult);
+      I->replaceAllUsesWith(FinalResult);
   }
   
   void replaceFMulAddCalls(Function *F) {
