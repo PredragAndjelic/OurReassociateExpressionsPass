@@ -18,6 +18,8 @@ int f() {
 int p() {
     int a,b,c;
 
+    a = b*c + b*c + c + b;
+
     return 3+2;
 }
 

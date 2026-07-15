@@ -29,6 +29,15 @@ define dso_local i32 @p() #0 {
   %1 = alloca i32, align 4
   %2 = alloca i32, align 4
   %3 = alloca i32, align 4
+  %4 = load i32, ptr %2, align 4
+  %5 = load i32, ptr %3, align 4
+  %6 = mul i32 %4, %5
+  %7 = shl i32 %6, 1
+  %8 = load i32, ptr %3, align 4
+  %9 = load i32, ptr %2, align 4
+  %10 = add i32 %7, %8
+  %11 = add i32 %10, %9
+  store i32 %11, ptr %1, align 4
   ret i32 5
 }
 
