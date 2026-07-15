@@ -3,9 +3,11 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Pass.h"
-#include <llvm/IR/Constants.h>
+#include "llvm/Support/ModRef.h"
+
 #include <algorithm>
 #include <deque>
+#include <llvm/IR/Constants.h>
 #include <unordered_map>
 #include <vector>
 
@@ -238,6 +240,56 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     return true;
   }
 
+  bool isCallSafe(CallInst* CI) {
+
+    Function* F = CI->getCalledFunction();
+
+    if (F->isDeclaration()) {
+
+      if (CI->mayHaveSideEffects())
+        return false;
+
+      for (Value* V : CI->operands())
+        if (!isSafe(V))
+          return false;
+
+      return true;
+    }
+
+    for (BasicBlock& BB: *F) {
+      for (Instruction& I : BB) {
+        if (StoreInst* SI = dyn_cast<StoreInst>(&I)) {
+          Value* Ptr = SI->getPointerOperand()->stripPointerCasts();
+          if (!isa<AllocaInst>(Ptr))
+            return false;
+        }
+
+        if (CallInst* CI = dyn_cast<CallInst>(&I))
+          if (!isCallSafe(CI))
+            return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool isSafe(Value* V) {
+
+    Instruction* I = dyn_cast<Instruction>(V);
+
+    if (!I)
+      return true;
+
+    if (CallInst *CI = dyn_cast<CallInst>(I))
+      return isCallSafe(CI);
+
+    for (Value* Op : I->operands())
+      if (!isSafe(Op))
+          return false;
+
+    return true;
+  }
+
   void mergeSameOperandsToMul(std::deque<Value *> &Linearized, unsigned Opcode) {
     if (Opcode != Instruction::Add && Opcode != Instruction::FAdd)
       return;
@@ -254,6 +306,8 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     std::vector<unsigned> isRepresentative(size, 0);
 
     for (int i = 0; i < size && getRank(Linearized[i]) != 0; i++) {
+      if (!isSafe(Linearized[i]))
+        continue;
       for (int j = i + 1; j < size && getRank(Linearized[i]) == getRank(Linearized[j]); j++) {
         if (areIdenticalOperands(Linearized[i], Linearized[j]) && isRepresentative[j] == 0 && toRemove[j] == false) {
           if (isRepresentative[i] == 0)
@@ -353,7 +407,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
 
     I->replaceAllUsesWith(FinalResult);
   }
-  
+
   void replaceFMulAddCalls(Function *F) {
     std::vector<CallInst *> FMulAddCalls;
     for (BasicBlock &BB : *F) {
@@ -458,6 +512,10 @@ struct OurReassociateExpressionsPass : public FunctionPass {
   OurReassociateExpressionsPass() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
+
+    RankMap.clear();
+    RootsToProcess.clear();
+    InstructionsToRemove.clear();
 
     replaceFMulAddCalls(&F);
 
