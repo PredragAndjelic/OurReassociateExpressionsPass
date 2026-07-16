@@ -84,21 +84,19 @@ struct OurReassociateExpressionsPass : public FunctionPass {
   }
 
   void toRemoveToBottom(Instruction* I) {
+    if (!I)
+      return;
 
-      if (!I)
-        return;
+    if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), I) == InstructionsToRemove.end())
+      InstructionsToRemove.push_back(I);
 
-      if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), I) == InstructionsToRemove.end())
-        InstructionsToRemove.push_back(I);
+    if (isa<LoadInst>(I))
+      return;
 
-      if (isa<LoadInst>(I))
-        return;
-
-      for (Value* Operand : I->operands()) {
-        if (Instruction* OperandInstr = dyn_cast<Instruction>(Operand))
+    for (Value* Operand : I->operands())
+      if (Instruction* OperandInstr = dyn_cast<Instruction>(Operand))
           toRemoveToBottom(OperandInstr);
-      }
-    }
+  }
 
     void toRemoveAllOperands(std::vector<Value*>& Linearized) {
       for (Value* V : Linearized) {
@@ -200,6 +198,33 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     }
   }
 
+  bool hasLoadIntermediateSideEffect(LoadInst *L1, LoadInst *L2) {
+
+    Instruction *FirstOccured = nullptr;
+    Instruction *SecondOccured = nullptr;
+
+    if (L1->comesBefore(L2)) {
+      FirstOccured = L1;
+      SecondOccured = L2;
+    }
+
+    if (L2->comesBefore(L1)) {
+      FirstOccured = L2;
+      SecondOccured = L1;
+    }
+
+    if (FirstOccured->getParent() != SecondOccured->getParent())
+      return true;
+
+    for (Instruction* I = FirstOccured->getNextNode(); I && I != SecondOccured; I = I->getNextNode()) {
+      if (StoreInst* SI = dyn_cast<StoreInst>(I)) {
+        if (SI->getPointerOperand()->stripPointerCasts() == L1->getPointerOperand()->stripPointerCasts())
+          return true;
+      }
+    }
+    return false;
+  }
+
   bool areIdenticalOperands(Value *V1, Value *V2) {
     if (V1 == V2)
       return true;
@@ -215,7 +240,9 @@ struct OurReassociateExpressionsPass : public FunctionPass {
 
     if (LoadInst *L1 = dyn_cast<LoadInst>(I1)) {
       LoadInst *L2 = cast<LoadInst>(I2);
-      return L1->getPointerOperand() == L2->getPointerOperand();
+      if (L1->getPointerOperand() != L2->getPointerOperand())
+        return false;
+      return !hasLoadIntermediateSideEffect(L1, L2);
     }
 
     if (CallInst *C1 = dyn_cast<CallInst>(I1)) {
@@ -415,7 +442,9 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     }
   }
 
+
   void mergeSameOperandsToMul(std::deque<Value*>& Linearized, unsigned Opcode) {
+
     if (Opcode != Instruction::Add && Opcode != Instruction::FAdd)
       return;
 

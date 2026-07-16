@@ -53,23 +53,40 @@ define dso_local i32 @new_p() #0 {
   %3 = alloca i32, align 4
   %4 = alloca i32, align 4
   %5 = alloca i32, align 4
-  %6 = load i32, ptr %1, align 4
-  %7 = load i32, ptr %2, align 4
-  %8 = mul nsw i32 %6, %7
-  %9 = load i32, ptr @x, align 4
-  %10 = add nsw i32 %9, 1
-  store i32 %10, ptr @x, align 4
-  %11 = mul nsw i32 %8, %10
-  store i32 %11, ptr %4, align 4
-  %12 = load i32, ptr %4, align 4
+  %6 = alloca i32, align 4
+  %7 = load i32, ptr %1, align 4
+  %8 = load i32, ptr %2, align 4
+  %9 = mul nsw i32 %7, %8
+  %10 = load i32, ptr @x, align 4
+  %11 = add nsw i32 %10, 1
+  store i32 %11, ptr @x, align 4
+  %12 = mul nsw i32 %9, %11
+  store i32 %12, ptr %4, align 4
   %13 = load i32, ptr %4, align 4
-  %14 = add nsw i32 %12, %13
-  store i32 %14, ptr %5, align 4
-  %15 = load i32, ptr @x, align 4
-  %16 = add nsw i32 %15, 1
-  store i32 %16, ptr @x, align 4
-  %17 = add nsw i32 5, %16
-  ret i32 %17
+  %14 = load i32, ptr %4, align 4
+  %15 = add nsw i32 %13, %14
+  store i32 %15, ptr %5, align 4
+  %16 = load i32, ptr %1, align 4
+  %17 = load i32, ptr %2, align 4
+  %18 = mul nsw i32 %16, %17
+  %19 = load i32, ptr @x, align 4
+  %20 = add nsw i32 %19, 1
+  store i32 %20, ptr @x, align 4
+  %21 = mul nsw i32 %18, %19
+  %22 = load i32, ptr %1, align 4
+  %23 = load i32, ptr %2, align 4
+  %24 = mul nsw i32 %22, %23
+  %25 = load i32, ptr @x, align 4
+  %26 = add nsw i32 %25, 1
+  store i32 %26, ptr @x, align 4
+  %27 = mul nsw i32 %24, %25
+  %28 = add nsw i32 %21, %27
+  store i32 %28, ptr %6, align 4
+  %29 = load i32, ptr @x, align 4
+  %30 = add nsw i32 %29, 1
+  store i32 %30, ptr @x, align 4
+  %31 = add nsw i32 5, %30
+  ret i32 %31
 }
 
 ; Function Attrs: noinline nounwind optnone uwtable

@@ -32,6 +32,7 @@ int new_p() {
 
   int v = a*b*(++x);
   int g = v + v;
+  int h = a*b*(x++) + a*b*(x++);
 
   return 3 + 2 + (++x);
 }
@@ -58,7 +59,7 @@ int main() {
 
     int y_1 = + new_p() + p() + new_p() + p();
 
-    int z = q() + q() + y + 1 + y  + q() + pow(y,4) + pow(y,4);
+    int z = q() + q() + y + 1 + y + q() + pow(y,4) + pow(y,4);
 
     int z_1 = new_f() + p() + p() + 4 + y*z + p() + new_f() + p();
 
