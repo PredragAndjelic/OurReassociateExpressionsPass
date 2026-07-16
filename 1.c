@@ -20,24 +20,51 @@ int p() {
 
     a = b*c + b*c + c + b;
 
-    return 3+2;
+
+    return 3+2+x;
 }
 
-double q() {
+int new_p() {
+
+  int a,b;
+
+  int c;
+
+  int v = a*b*(++x);
+  int g = v + v;
+
+  return 3 + 2 + (++x);
+}
+
+
+int new_f () {
+  printf("x");
+  int a = 3 + 4;
+  int b = a + a;
+  return b + a;
+}
+
+int q() {
     int a = 17;
     double b = 4*a;
-    printf("da");
-    return b;
+    int m = x;
+    return m+2;
 }
 
 int main() {
 
 
-    int y = p() + p() + p() + p();
+    int y = p() + q() + p() + q();
 
-    int z = q() + q() + y + 1 + y + pow(y,4) + q() + pow(y,4);
+    int y_1 = + new_p() + p() + new_p() + p();
+
+    int z = q() + q() + y + 1 + y  + q() + pow(y,4) + pow(y,4);
+
+    int z_1 = new_f() + p() + p() + 4 + y*z + p() + new_f() + p();
 
     int a, b, c;
+
+    int x_1 = pow(c, b) + p() + pow(c,b) + p() + p() + p();
 
     int r = pow(a,b) + pow(a,b);
 

@@ -3,9 +3,9 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Pass.h"
-#include <llvm/IR/Constants.h>
 #include <algorithm>
 #include <deque>
+#include <llvm/IR/Constants.h>
 #include <unordered_map>
 #include <vector>
 
@@ -108,68 +108,66 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     }
 
     void eraseInLinearizedIfNeeded(std::vector<Value*>& Linearized, Instruction* I) {
+    unsigned InstrOpcode = I->getOpcode();
 
-      unsigned InstrOpcode = I->getOpcode();
-
-      for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0; i--) {
-        if (InstrOpcode == Instruction::Add) {
-          if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::FAdd) {
-          if (dyn_cast<ConstantFP>(Linearized[i])->isZero())
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::Mul) {
-          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
-          if (CI->isZero()) {
-            toRemoveAllOperands(Linearized);
-            Linearized.clear();
-            break;
-          }
-          else if (CI->isOne())
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::FMul) {
-          ConstantFP* CF = dyn_cast<ConstantFP>(Linearized[i]);
-          if (CF->isZero()) {
-            toRemoveAllOperands(Linearized);
-            Linearized.clear();
-            break;
-          }
-          else if (CF->isExactlyValue(1.0))
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::And) {
-          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
-          if (CI->isZero()) {
-            toRemoveAllOperands(Linearized);
-            Linearized.clear();
-            break;
-          }
-          else if (CI->isMinusOne())
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::Or) {
-          ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
-          if (CI->isMinusOne()) {
-            toRemoveAllOperands(Linearized);
-            Linearized.clear();
-            Linearized.push_back(CI);
-            break;
-          }
-          else if (CI->isZero())
-            Linearized[i] = nullptr;
-        }
-        else if (InstrOpcode == Instruction::Xor) {
-          if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
-            Linearized[i] = nullptr;
-        }
+    for (int i = Linearized.size() - 1; i >= 0 && getRank(Linearized[i]) == 0; i--) {
+      if (InstrOpcode == Instruction::Add) {
+        if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
+          Linearized[i] = nullptr;
       }
-
-      Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr), Linearized.end());
-
+      else if (InstrOpcode == Instruction::FAdd) {
+        if (dyn_cast<ConstantFP>(Linearized[i])->isZero())
+          Linearized[i] = nullptr;
+      }
+      else if (InstrOpcode == Instruction::Mul) {
+        ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+        if (CI->isZero()) {
+          toRemoveAllOperands(Linearized);
+          Linearized.clear();
+          break;
+        }
+        else if (CI->isOne())
+          Linearized[i] = nullptr;
+      }
+      else if (InstrOpcode == Instruction::FMul) {
+        ConstantFP* CF = dyn_cast<ConstantFP>(Linearized[i]);
+        if (CF->isZero()) {
+          toRemoveAllOperands(Linearized);
+          Linearized.clear();
+          break;
+        }
+        else if (CF->isExactlyValue(1.0))
+          Linearized[i] = nullptr;
+      }
+      else if (InstrOpcode == Instruction::And) {
+        ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+        if (CI->isZero()) {
+          toRemoveAllOperands(Linearized);
+          Linearized.clear();
+          break;
+        }
+        else if (CI->isMinusOne())
+          Linearized[i] = nullptr;
+      }
+      else if (InstrOpcode == Instruction::Or) {
+        ConstantInt* CI = dyn_cast<ConstantInt>(Linearized[i]);
+        if (CI->isMinusOne()) {
+          toRemoveAllOperands(Linearized);
+          Linearized.clear();
+          Linearized.push_back(CI);
+          break;
+        }
+        else if (CI->isZero())
+          Linearized[i] = nullptr;
+      }
+      else if (InstrOpcode == Instruction::Xor) {
+        if (dyn_cast<ConstantInt>(Linearized[i])->isZero())
+          Linearized[i] = nullptr;
+      }
     }
+
+    Linearized.erase(std::remove(Linearized.begin(), Linearized.end(), nullptr), Linearized.end());
+  }
 
   void linearize(Instruction *I, std::vector<Value *> &Linearized) {
     if (std::find(InstructionsToRemove.begin(), InstructionsToRemove.end(), I) == InstructionsToRemove.end())
@@ -184,8 +182,8 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     BinaryOperator *BO1 = dyn_cast<BinaryOperator>(L);
     BinaryOperator *BO2 = dyn_cast<BinaryOperator>(R);
 
-    bool CanGoDeeperLeft = BO1 && BO1->getOpcode() == InstrOpcode;
-    bool CanGoDeeperRight = BO2 && BO2->getOpcode() == InstrOpcode;
+    bool CanGoDeeperLeft = BO1 && BO1->getOpcode() == InstrOpcode && BO1->hasOneUse();
+    bool CanGoDeeperRight = BO2 && BO2->getOpcode() == InstrOpcode && BO2->hasOneUse();
 
     if (!CanGoDeeperLeft && !CanGoDeeperRight) {
       Linearized.push_back(L);
@@ -223,8 +221,9 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     if (CallInst *C1 = dyn_cast<CallInst>(I1)) {
       CallInst *C2 = cast<CallInst>(I2);
       if (C1->getCalledFunction() != C2->getCalledFunction())
-        return false;
+         return false;
     }
+
 
     if (I1->getNumOperands() != I2->getNumOperands())
       return false;
@@ -238,7 +237,8 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     return true;
   }
 
-  bool isCallSafe(CallInst* CI) {
+  bool isCallSafe(CallInst* CI, std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>>& functionsGlobalVariables,
+    int i) {
 
     Function* F = CI->getCalledFunction();
 
@@ -248,7 +248,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
         return false;
 
       for (Value* V : CI->operands())
-        if (!isSafe(V))
+        if (!isSafe(V, functionsGlobalVariables, i))
           return false;
 
       return true;
@@ -263,7 +263,7 @@ struct OurReassociateExpressionsPass : public FunctionPass {
         }
 
         if (CallInst* CI = dyn_cast<CallInst>(&I))
-          if (!isCallSafe(CI))
+          if (!isCallSafe(CI, functionsGlobalVariables, i))
             return false;
       }
     }
@@ -271,24 +271,151 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     return true;
   }
 
-  bool isSafe(Value* V) {
+  bool isSafe(Value* V, std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>>& functionsGlobalVariables, int i) {
 
     Instruction* I = dyn_cast<Instruction>(V);
 
     if (!I)
       return true;
 
-    if (CallInst *CI = dyn_cast<CallInst>(I))
-      return isCallSafe(CI);
+    if (CallInst *CI = dyn_cast<CallInst>(I)) {
+
+      bool isCurrentlySafe = isCallSafe(CI, functionsGlobalVariables, i);
+      auto it = std::find_if(functionsGlobalVariables.begin(), functionsGlobalVariables.end(), [i](const auto& P) {
+        return P.first == i;
+      });
+
+      if (it == functionsGlobalVariables.end())
+        return isCurrentlySafe;
+
+      bool forNowSafe = true;
+
+      for (auto &[GV, currentAccess] : it->second) {
+        for (auto it1 = std::next(it); it1 != functionsGlobalVariables.end(); it1++) {
+          for (auto &[nextGV, nextAccess] : it1->second) {
+            if (nextGV == GV && nextAccess == 'S') {
+              forNowSafe = false;
+              break;
+            }
+          }
+
+          if (!forNowSafe)
+            break;
+        }
+
+        if (!forNowSafe)
+          break;
+      }
+
+      return isCurrentlySafe && forNowSafe;
+    }
 
     for (Value* Op : I->operands())
-      if (!isSafe(Op))
+      if (!isSafe(Op, functionsGlobalVariables, i))
           return false;
 
     return true;
   }
 
-  void mergeSameOperandsToMul(std::deque<Value *> &Linearized, unsigned Opcode) {
+  void fillForDefinition(std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>>& functionsGlobalVariables,
+    Function* F, int& current, int& previous) {
+    for (BasicBlock& BB : *F) {
+      for (Instruction& I : BB) {
+        if (LoadInst* LI = dyn_cast<LoadInst>(&I)) {
+          Value* Ptr = LI->getPointerOperand()->stripPointerCasts();
+          GlobalVariable* GV = dyn_cast<GlobalVariable>(Ptr);
+          if (GV) {
+            if (current != previous) {
+              functionsGlobalVariables.emplace_back();
+              functionsGlobalVariables.back().first = current;
+              previous = current;
+            }
+            functionsGlobalVariables.back().second.emplace_back(GV, 'L');
+          }
+        }
+
+        else if (StoreInst* SI = dyn_cast<StoreInst>(&I)) {
+          Value* Ptr = SI->getPointerOperand()->stripPointerCasts();
+          GlobalVariable* GV = dyn_cast<GlobalVariable>(Ptr);
+          if (GV) {
+            if (current != previous) {
+              functionsGlobalVariables.emplace_back();
+              functionsGlobalVariables.back().first = current;
+              previous = current;
+            }
+            functionsGlobalVariables.back().second.emplace_back(GV, 'S');
+          }
+        }
+
+        else if (CallInst* CI = dyn_cast<CallInst>(&I)) {
+          if (CI->getCalledFunction()->isDeclaration()) {
+            for (Value* V : CI->operands())
+              fillForOperand_Declaration(functionsGlobalVariables, V, current, previous);
+          } else
+              fillForDefinition(functionsGlobalVariables, CI->getCalledFunction(), current, previous);
+        }
+        else {
+          fillForOperand_Declaration(functionsGlobalVariables, &I, current, previous);
+        }
+      }
+    }
+  }
+
+  void fillForOperand_Declaration(std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>>& functionsGlobalVariables,
+    Value* Op, int& current, int& previous) {
+    if (LoadInst* LI = dyn_cast<LoadInst>(Op)) {
+      Value* Ptr = LI->getPointerOperand()->stripPointerCasts();
+      GlobalVariable* GV = dyn_cast<GlobalVariable>(Ptr);
+      if (GV) {
+        if (current != previous) {
+          functionsGlobalVariables.emplace_back();
+          functionsGlobalVariables.back().first = current;
+          previous = current;
+        }
+        functionsGlobalVariables.back().second.emplace_back(GV, 'L');
+      }
+    }
+
+    if (StoreInst* SI = dyn_cast<StoreInst>(Op)) {
+      Value* Ptr = SI->getPointerOperand()->stripPointerCasts();
+      GlobalVariable* GV = dyn_cast<GlobalVariable>(Ptr);
+      if (GV) {
+        if (current != previous) {
+          functionsGlobalVariables.emplace_back();
+          functionsGlobalVariables.back().first = current;
+          previous = current;
+        }
+        functionsGlobalVariables.back().second.emplace_back(GV, 'S');
+      }
+    }
+
+    if (CallInst* CI = dyn_cast<CallInst>(Op))
+      if (!CI->getCalledFunction()->isDeclaration())
+        fillForDefinition(functionsGlobalVariables, CI->getCalledFunction(), current, previous);
+
+    Instruction* I = dyn_cast<Instruction>(Op);
+    if (I)
+      for (Value* V : I->operands())
+        fillForOperand_Declaration(functionsGlobalVariables, V, current, previous);
+
+  }
+
+  void fillWithGlobalVariables(std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>>& functionsGlobalVariables,
+    std::deque<Value*>& Linearized, int size) {
+    for (int i = 0; i < size; i++) {
+      int tmp = i-1;
+      CallInst* CI = dyn_cast<CallInst>(Linearized[i]);
+      if (CI) {
+        if (CI->getCalledFunction()->isDeclaration()) {
+          for (Value* Op : CI->operands())
+            fillForOperand_Declaration(functionsGlobalVariables, Op, i, tmp);
+        } else
+            fillForDefinition(functionsGlobalVariables, CI->getCalledFunction(), i, tmp);
+      }
+    }
+  }
+
+  void mergeSameOperandsToMul(std::deque<Value*>& Linearized, unsigned Opcode) {
     if (Opcode != Instruction::Add && Opcode != Instruction::FAdd)
       return;
 
@@ -303,8 +430,11 @@ struct OurReassociateExpressionsPass : public FunctionPass {
     std::vector<bool> toRemove(size, false);
     std::vector<unsigned> isRepresentative(size, 0);
 
+    std::vector<std::pair<int, std::vector<std::pair<GlobalVariable*, char>>>> functionsGlobalVariables;
+    fillWithGlobalVariables(functionsGlobalVariables, Linearized, size);
+
     for (int i = 0; i < size && getRank(Linearized[i]) != 0; i++) {
-      if (!isSafe(Linearized[i]))
+      if (!isSafe(Linearized[i], functionsGlobalVariables, i))
         continue;
       for (int j = i + 1; j < size && getRank(Linearized[i]) == getRank(Linearized[j]); j++) {
         if (areIdenticalOperands(Linearized[i], Linearized[j]) && isRepresentative[j] == 0 && toRemove[j] == false) {
